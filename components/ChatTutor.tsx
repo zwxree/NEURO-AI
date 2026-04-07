@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || 'missing_api_key' });
 
 interface Message {
   role: 'user' | 'model';
