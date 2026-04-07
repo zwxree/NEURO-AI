@@ -56,6 +56,7 @@ export default function NeuroLearningBook() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({'learning-note': true});
   const [dynamicNote, setDynamicNote] = useState("Loading insights...");
+  const [noteCache, setNoteCache] = useState<Record<number, string>>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const bookRef = useRef<HTMLDivElement>(null);
@@ -117,6 +118,11 @@ export default function NeuroLearningBook() {
     // Only fetch dynamic note for syllabus pages
     if (pageIndex < 1 || pageIndex > 4) return;
 
+    if (noteCache[pageIndex]) {
+      setDynamicNote(noteCache[pageIndex]);
+      return;
+    }
+
     const fetchDynamicNote = async () => {
       setDynamicNote("Fetching evidence-based insights from the web...");
       try {
@@ -141,19 +147,25 @@ export default function NeuroLearningBook() {
             tools: [{ googleSearch: {} }],
           }
         });
-        setDynamicNote(response.text || "Keep exploring!");
-      } catch (err) {
+        const newNote = response.text || "Keep exploring!";
+        setDynamicNote(newNote);
+        setNoteCache(prev => ({ ...prev, [pageIndex]: newNote }));
+      } catch (err: any) {
         console.error(err);
-        setDynamicNote("Ready to learn! (Offline mode)");
+        if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+          setDynamicNote("API Quota Exceeded. Please check your plan and billing details at https://ai.google.dev/gemini-api/docs/rate-limits.");
+        } else {
+          setDynamicNote("Ready to learn! (Offline mode)");
+        }
       }
     };
     
     const timeoutId = setTimeout(() => {
       fetchDynamicNote();
-    }, 800);
+    }, 1500); // Increased debounce to 1.5s to prevent rapid firing
 
     return () => clearTimeout(timeoutId);
-  }, [pageIndex]);
+  }, [pageIndex, noteCache]);
 
   const renderPageContent = () => {
     if (pageIndex === 0) {
