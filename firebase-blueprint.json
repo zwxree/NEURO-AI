@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Stores user profile and learning progress data.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User's display name"
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address"
+        },
+        "completedModules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of completed study module IDs or names"
+        },
+        "quizScores": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Map of quiz IDs/names to highest score achieved"
+        },
+        "explorationHistory": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of recent exploration actions"
+        },
+        "preferences": {
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": ["Class 10", "Class 11", "Class 12", "Undergraduate"],
+              "description": "User's current educational level"
+            },
+            "interests": {
+              "type": "string",
+              "description": "User's interests (e.g., movies, comics) for personalized learning"
+            }
+          },
+          "description": "User's learning preferences"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of profile creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last profile update"
+        }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles and learning progress."
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "NEURO AI",
+  "description": "A cognitive-aware learning application designed to support both neurodivergent and neurotypical students with a realistic book-inspired UI.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
