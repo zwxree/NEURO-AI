@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, ChevronDown, ArrowRight, ArrowLeft, Sparkles, BookOpen, User, Mic, Video, Brain } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ArrowRight, ArrowLeft, Sparkles, BookOpen, User, Mic, Video, Brain, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import { auth, logOut, db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import InteractiveBrain from '../components/InteractiveBrain';
+import MemoryDiagram from '../components/MemoryDiagram';
 import LiveTutor from '../components/LiveTutor';
+import ChatTutor from '../components/ChatTutor';
 import NeuroBot from '../components/NeuroBot';
 
 const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
@@ -59,6 +60,9 @@ export default function NeuroLearningBook() {
   const [noteCache, setNoteCache] = useState<Record<number, string>>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
+  const [showIntro, setShowIntro] = useState(true);
+  const [liveTutorCaptions, setLiveTutorCaptions] = useState("Start the tutor to see captions here...");
+  const [activeDiagram, setActiveDiagram] = useState<string | null>(null);
   const bookRef = useRef<HTMLDivElement>(null);
 
   // Auth Listener
@@ -102,6 +106,7 @@ export default function NeuroLearningBook() {
     { id: 'Class 12', label: 'Class 12' },
     { id: 'Practicals', label: 'Practicals' },
     { id: 'Live Tutor', label: 'Live Tutor' },
+    { id: 'Visual Chat', label: 'Visual Chat' },
     { id: 'Profile', label: 'Profile' }
   ];
 
@@ -111,7 +116,8 @@ export default function NeuroLearningBook() {
     else if (activeTab === 'Class 12') setPageIndex(3);
     else if (activeTab === 'Practicals') setPageIndex(4);
     else if (activeTab === 'Live Tutor') setPageIndex(5);
-    else if (activeTab === 'Profile') setPageIndex(6);
+    else if (activeTab === 'Visual Chat') setPageIndex(6);
+    else if (activeTab === 'Profile') setPageIndex(7);
   }, [activeTab]);
 
   useEffect(() => {
@@ -135,7 +141,7 @@ export default function NeuroLearningBook() {
         if (topic2) currentTopic += " and " + topic2.title;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.1-pro-preview",
+          model: "gemini-3-flash-preview",
           contents: `Search the web for a fascinating fact or study tip about: ${currentTopic}. 
           CRITICAL INSTRUCTION: Use evidence-based methods to refine the content for a neurodivergent learner (e.g., ADHD, Autism, Dyslexia). 
           - Keep it under 3 sentences. 
@@ -329,7 +335,10 @@ export default function NeuroLearningBook() {
               <NeuroBot mood={'explaining'} />
             </div>
             <div className="w-full h-[60%]">
-              <LiveTutor />
+              <LiveTutor 
+                onCaptionsUpdate={setLiveTutorCaptions}
+                onShowDiagram={setActiveDiagram}
+              />
             </div>
             <div className="mt-8 border-2 border-slate-800 p-4 bg-white/50 relative">
               <div className="flex justify-between items-center mb-2">
@@ -337,7 +346,7 @@ export default function NeuroLearningBook() {
                 <Sparkles className="w-4 h-4 text-amber-500" />
               </div>
               <p className="handwritten text-xs leading-relaxed">
-                Start the voice tutor and ask a question about the syllabus! The AI will watch your expressions. If you look confused, it will automatically simplify the explanation. If you look away, it will remind you to focus!
+                Start the voice tutor and ask a question about the syllabus! The AI will watch your expressions. If you look confused, it will automatically simplify the explanation. Ask it to "teach me about memory allocation" to see a diagram!
               </p>
             </div>
             <div className="absolute bottom-8 left-12 flex items-center gap-2 text-xs font-bold text-slate-400">
@@ -349,19 +358,40 @@ export default function NeuroLearningBook() {
           </div>
         ),
         right: (
-          <div className="book-page book-page-right flex-1">
-            <h2 className="text-2xl font-bold italic mb-6 uppercase tracking-widest text-center">3D Cortical Atlas</h2>
-            <div className="relative w-full h-[60%] mb-8 flex justify-center items-center">
-              <InteractiveBrain />
-            </div>
-            <div className="mt-8 text-center">
-              <p className="handwritten text-sm text-slate-600">
-                Explore the brain regions responsible for learning and memory while you study.
-              </p>
-            </div>
+          <div className="book-page book-page-right flex-1 flex flex-col">
+            {activeDiagram === 'memory_allocation' ? (
+              <>
+                <h2 className="text-2xl font-bold italic mb-6 uppercase tracking-widest text-center">Memory & Pointers</h2>
+                <div className="relative w-full h-[60%] mb-8 flex justify-center items-center">
+                  <MemoryDiagram />
+                </div>
+                <div className="mt-8 text-center">
+                  <p className="handwritten text-sm text-slate-600">
+                    Visualize how variables and pointers interact with computer memory in real-time.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col">
+                <h2 className="text-2xl font-bold italic mb-6 uppercase tracking-widest text-center">Live Captions</h2>
+                <div className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-lg p-6 overflow-y-auto relative shadow-inner">
+                  <div className="absolute top-4 left-4 text-slate-300">
+                    <Mic className="w-8 h-8" />
+                  </div>
+                  <p className="handwritten text-xl text-slate-700 leading-relaxed mt-8 whitespace-pre-wrap">
+                    {liveTutorCaptions}
+                  </p>
+                </div>
+                <div className="mt-6 text-center">
+                  <p className="handwritten text-sm text-slate-500">
+                    Ask the tutor to show you a diagram about memory allocation to switch views!
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="absolute bottom-8 right-12 flex items-center gap-2 text-xs font-bold text-slate-400">
               <span>Page 12</span>
-              <button onClick={() => { setPageIndex(6); setActiveTab('Profile'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+              <button onClick={() => { setPageIndex(6); setActiveTab('Visual Chat'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
                 Next Page <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -371,6 +401,40 @@ export default function NeuroLearningBook() {
     }
 
     if (pageIndex === 6) {
+      return {
+        left: (
+          <div className="book-page book-page-left flex-1 p-0">
+            <div className="w-full h-full p-4">
+              <ChatTutor />
+            </div>
+            <div className="absolute bottom-8 left-12 flex items-center gap-2 text-xs font-bold text-slate-400">
+              <button onClick={() => { setPageIndex(5); setActiveTab('Live Tutor'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+                <ArrowLeft className="w-3 h-3" /> Prev Page
+              </button>
+              <span>Page 13</span>
+            </div>
+          </div>
+        ),
+        right: (
+          <div className="book-page book-page-right flex-1 flex flex-col justify-center items-center text-center">
+            <h2 className="text-2xl font-bold italic mb-6 uppercase tracking-widest text-center">Visual Chat Tutor</h2>
+            <div className="mt-8 text-center max-w-md">
+              <p className="handwritten text-lg text-slate-600">
+                Chat with an AI that can see your expressions and generate images and videos to explain concepts visually!
+              </p>
+            </div>
+            <div className="absolute bottom-8 right-12 flex items-center gap-2 text-xs font-bold text-slate-400">
+              <span>Page 14</span>
+              <button onClick={() => { setPageIndex(7); setActiveTab('Profile'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+                Next Page <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )
+      };
+    }
+
+    if (pageIndex === 7) {
       return {
         left: (
           <div className="book-page book-page-left flex-1">
@@ -406,10 +470,10 @@ export default function NeuroLearningBook() {
               </div>
             )}
             <div className="absolute bottom-8 left-12 flex items-center gap-2 text-xs font-bold text-slate-400">
-              <button onClick={() => { setPageIndex(5); setActiveTab('Live Tutor'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+              <button onClick={() => { setPageIndex(6); setActiveTab('Visual Chat'); }} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
                 <ArrowLeft className="w-3 h-3" /> Prev Page
               </button>
-              <span>Page 13</span>
+              <span>Page 15</span>
             </div>
           </div>
         ),
@@ -436,7 +500,7 @@ export default function NeuroLearningBook() {
                 </div>
               </div>
             </div>
-            <div className="absolute bottom-8 right-12 text-xs font-bold text-slate-400">Page 14</div>
+            <div className="absolute bottom-8 right-12 text-xs font-bold text-slate-400">Page 16</div>
           </div>
         )
       };
@@ -455,6 +519,71 @@ export default function NeuroLearningBook() {
         <div className="absolute top-10 right-10 w-64 h-64 bg-amber-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000" />
         <div className="absolute bottom-10 left-1/2 w-64 h-64 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000" />
       </div>
+
+      <AnimatePresence>
+        {showIntro && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border-4 border-slate-800"
+            >
+              <div className="bg-slate-800 p-6 text-white text-center">
+                <Brain className="w-16 h-16 mx-auto mb-4 text-amber-400" />
+                <h2 className="text-3xl font-bold italic">Welcome to Neuro AI</h2>
+                <p className="text-slate-300 mt-2">Your adaptive, neuro-inclusive learning platform.</p>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="flex gap-4 items-start">
+                  <div className="bg-blue-100 p-3 rounded-full text-blue-600 shrink-0">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Interactive Syllabus</h3>
+                    <p className="text-slate-600 text-sm">Browse your Class 11 & 12 Computer Science topics. Dynamic, evidence-based insights are generated automatically to help you study.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start">
+                  <div className="bg-amber-100 p-3 rounded-full text-amber-600 shrink-0">
+                    <Mic className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Live Voice Tutor</h3>
+                    <p className="text-slate-600 text-sm">Talk to an AI tutor that watches your expressions in real-time. If you look confused, it adapts instantly! Ask it to "show a diagram" to see visual aids.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start">
+                  <div className="bg-pink-100 p-3 rounded-full text-pink-600 shrink-0">
+                    <Video className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Visual Chat Tutor</h3>
+                    <p className="text-slate-600 text-sm">Chat with an AI that can generate custom images and videos on the fly to explain complex concepts visually.</p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    <strong>Privacy First:</strong> None of your camera data is ever saved or stored. Video feeds are only used for real-time expression detection to adapt the teaching style to your needs.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowIntro(false)}
+                  className="w-full py-4 bg-slate-800 text-white rounded-xl font-bold text-lg hover:bg-slate-700 transition-colors shadow-lg"
+                >
+                  Start Learning
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="w-full max-w-6xl h-[85vh] flex relative z-10">
         {/* Navigation Tabs */}

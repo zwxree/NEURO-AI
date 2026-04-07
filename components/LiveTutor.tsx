@@ -1,12 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
-import { Mic, Video, Square } from 'lucide-react';
+import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from "@google/genai";
+import { Mic, Video, Square, ShieldAlert } from 'lucide-react';
 
 const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
 
-export default function LiveTutor() {
+const showDiagramTool: FunctionDeclaration = {
+  name: "showDiagram",
+  description: "Show a visual diagram to the user on the right page when they ask about memory allocation or pointers.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      diagramName: { type: Type.STRING, description: "The name of the diagram to show. Currently supported: 'memory_allocation'" }
+    },
+    required: ["diagramName"]
+  }
+};
+
+interface LiveTutorProps {
+  onShowDiagram: (diagramName: string | null) => void;
+  onCaptionsUpdate: (text: string) => void;
+}
+
+export default function LiveTutor({ onShowDiagram, onCaptionsUpdate }: LiveTutorProps) {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState('Idle');
+  const [currentMood, setCurrentMood] = useState('Analyzing...');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -15,16 +33,54 @@ export default function LiveTutor() {
   const streamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const videoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const moodIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const nextPlayTimeRef = useRef<number>(0);
 
+  const analyzeMood = async () => {
+    if (!videoRef.current || !canvasRef.current || !isActive) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    ctx.drawImage(videoRef.current, 0, 0);
+    const base64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+    
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-preview",
+        contents: [
+          { inlineData: { data: base64, mimeType: 'image/jpeg' } },
+          { text: "Analyze the facial expression of the person in this image. Respond with ONLY ONE WORD describing their mood or state (e.g., Confused, Focused, Happy, Distracted, Frustrated, Neutral)." }
+        ]
+      });
+      if (response.text) {
+        setCurrentMood(response.text.trim());
+      }
+    } catch (err) {
+      console.error("Mood analysis failed:", err);
+    }
+  };
+
   const startTutor = async () => {
     try {
       setStatus('Connecting...');
+      onCaptionsUpdate("Connecting to AI Tutor...");
+      onShowDiagram(null);
       
       // 1. Get Media
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }, 
+        video: true 
+      });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -32,6 +88,7 @@ export default function LiveTutor() {
 
       // 2. Setup Audio Context
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      await audioCtx.resume();
       audioCtxRef.current = audioCtx;
       nextPlayTimeRef.current = audioCtx.currentTime;
 
@@ -40,27 +97,35 @@ export default function LiveTutor() {
         model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
+          outputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: {
-            parts: [{
-              text: "You are a friendly, encouraging computer science tutor teaching basic concepts like variables, loops, and functions. You can see the user through their webcam. 1. If the user looks confused, stuck, or frustrated, immediately pause your current explanation and offer a simpler, relatable everyday example. 2. If the user looks away from the screen or seems distracted, stop teaching and politely remind them to look at the screen. 3. Keep your responses brief, conversational, and interactive. Start by asking what basic CS concept they want to learn today."
-            }]
-          }
+          tools: [{ functionDeclarations: [showDiagramTool] }],
+          systemInstruction: "You are a friendly, highly adaptive computer science tutor. Your core philosophy is: 'If the student can't learn the way we teach, we teach the way they learn.' You can see the user through their webcam. 1. ALWAYS use highly visual, descriptive language (e.g., 'picture a series of boxes', 'imagine a branching tree') and highly relatable, everyday examples (like video games, cooking, or sports) to explain concepts. 2. If the user looks confused, stuck, or frustrated, immediately pause and switch to a completely different, even simpler visual analogy. 3. If the user looks away or seems distracted, gently bring their attention back to the screen. 4. Keep responses brief, conversational, and interactive. Start by asking what basic CS concept they want to learn today and what their favorite hobby is so you can tailor your examples to them! 5. If the user asks about memory allocation, pointers, or RAM, call the `showDiagram` tool with diagramName 'memory_allocation' to show them a visual diagram on the right page."
         },
         callbacks: {
           onopen: () => {
             setStatus('Active');
             setIsActive(true);
             
+            // Trigger initial greeting
+            sessionPromise.then(session => {
+              session.sendRealtimeInput({ text: "Hello! I'm ready to learn." });
+            });
+
             // Start Audio Capture
             const source = audioCtx.createMediaStreamSource(stream);
             const processor = audioCtx.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
             
+            // Create a dummy gain node to prevent microphone feedback loop
+            const dummyGain = audioCtx.createGain();
+            dummyGain.gain.value = 0;
+            
             source.connect(processor);
-            processor.connect(audioCtx.destination);
+            processor.connect(dummyGain);
+            dummyGain.connect(audioCtx.destination);
             
             processor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
@@ -85,7 +150,7 @@ export default function LiveTutor() {
               });
             };
 
-            // Start Video Capture (1 frame per second)
+            // Start Video Capture (1 frame per second for Live API)
             videoIntervalRef.current = setInterval(() => {
               if (videoRef.current && canvasRef.current) {
                 const canvas = canvasRef.current;
@@ -101,6 +166,9 @@ export default function LiveTutor() {
                 }
               }
             }, 1000);
+
+            // Start Mood Analysis (every 3 seconds)
+            moodIntervalRef.current = setInterval(analyzeMood, 3000);
           },
           onmessage: (message: LiveServerMessage) => {
             if (message.serverContent?.interrupted) {
@@ -108,6 +176,38 @@ export default function LiveTutor() {
               activeSourcesRef.current = [];
               if (audioCtxRef.current) {
                 nextPlayTimeRef.current = audioCtxRef.current.currentTime;
+              }
+            }
+
+            // Handle tool calls
+            const toolCalls = message.toolCall?.functionCalls;
+            if (toolCalls && toolCalls.length > 0) {
+              for (const call of toolCalls) {
+                if (call.name === 'showDiagram') {
+                  const diagramName = call.args?.diagramName as string;
+                  onShowDiagram(diagramName);
+                  
+                  // Send tool response back
+                  sessionPromise.then(session => {
+                    session.sendToolResponse({
+                      functionResponses: [{
+                        id: call.id,
+                        name: call.name,
+                        response: { result: "Diagram shown successfully." }
+                      }]
+                    });
+                  });
+                }
+              }
+            }
+
+            // Handle transcriptions for captions
+            const parts = message.serverContent?.modelTurn?.parts;
+            if (parts) {
+              for (const part of parts) {
+                if (part.text) {
+                  onCaptionsUpdate(part.text);
+                }
               }
             }
             
@@ -163,6 +263,8 @@ export default function LiveTutor() {
   const stopTutor = () => {
     setIsActive(false);
     setStatus('Idle');
+    setCurrentMood('Analyzing...');
+    onCaptionsUpdate("Tutor disconnected.");
     
     if (sessionPromiseRef.current) {
       sessionPromiseRef.current.then(session => session.close());
@@ -172,6 +274,11 @@ export default function LiveTutor() {
     if (videoIntervalRef.current) {
       clearInterval(videoIntervalRef.current);
       videoIntervalRef.current = null;
+    }
+
+    if (moodIntervalRef.current) {
+      clearInterval(moodIntervalRef.current);
+      moodIntervalRef.current = null;
     }
     
     if (processorRef.current) {
@@ -200,7 +307,7 @@ export default function LiveTutor() {
 
   return (
     <div className="flex flex-col h-full w-full">
-      <div className="relative flex-1 bg-slate-900 rounded-lg overflow-hidden border-4 border-slate-800 mb-4">
+      <div className="relative flex-1 bg-slate-900 rounded-lg overflow-hidden border-4 border-slate-800 mb-2">
         <video 
           ref={videoRef} 
           autoPlay 
@@ -220,11 +327,21 @@ export default function LiveTutor() {
         )}
         
         {isActive && (
-          <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded animate-pulse flex items-center gap-2">
-            <div className="w-2 h-2 bg-white rounded-full" />
-            LIVE TUTOR ACTIVE
-          </div>
+          <>
+            <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded animate-pulse flex items-center gap-2 shadow-md">
+              <div className="w-2 h-2 bg-white rounded-full" />
+              LIVE TUTOR ACTIVE
+            </div>
+            <div className="absolute top-4 right-4 bg-slate-800/80 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md border border-slate-600">
+              Mood: <span className="text-amber-400">{currentMood}</span>
+            </div>
+          </>
         )}
+      </div>
+
+      <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-4 px-2">
+        <ShieldAlert className="w-3 h-3" />
+        <p>Privacy Disclaimer: None of your camera data is saved. It is only used for real-time expression detection to adapt the teaching style.</p>
       </div>
 
       <div className="flex items-center justify-between bg-slate-100 p-4 rounded-lg border-2 border-slate-800">
